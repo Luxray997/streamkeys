@@ -116,10 +116,64 @@
   };
 
   /**
-   * Capture hotkeys and send their actions to tab(s) with music player running
+   * Parses a Chrome command shortcut string (e.g. "Ctrl+Shift+2" or "MediaPlayPause")
+   * into a KeyboardEventInit-compatible object.
+   * @param {String} shortcut - shortcut string from chrome.commands.getAll()
+   * @returns {Object} - KeyboardEvent init options
    */
+  var parseShortcut = function(shortcut) {
+    var parts = shortcut.split("+");
+    var key = parts[parts.length - 1];
+    return {
+      key: key,
+      ctrlKey: parts.indexOf("Ctrl") !== -1 || parts.indexOf("MacCtrl") !== -1,
+      shiftKey: parts.indexOf("Shift") !== -1,
+      altKey: parts.indexOf("Alt") !== -1,
+      metaKey: parts.indexOf("Meta") !== -1,
+      bubbles: true,
+      cancelable: true
+    };
+  };
+
+  /**
+   * Dispatches a synthetic keyboard event for the given command to the currently
+   * active tab so that other page-level listeners can also react to the hotkey.
+   * @param {String} command - name of the command (matches chrome.commands name)
+   */
+  var sendKeyboardPassthrough = function(command) {
+    var cmds = window.coms;
+    if (!cmds) return;
+    var matchedCmd = null;
+    for (var i = 0; i < cmds.length; i++) {
+      if (cmds[i].name === command) {
+        matchedCmd = cmds[i];
+        break;
+      }
+    }
+    if (!matchedCmd || !matchedCmd.shortcut) return;
+
+    var keyInit = parseShortcut(matchedCmd.shortcut);
+    var keyInitJson = JSON.stringify(keyInit);
+
+    chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {
+      if (!tabs || !tabs.length) return;
+      var code = "(function() { " +
+        "var init = " + keyInitJson + "; " +
+        "[\"keydown\", \"keyup\"].forEach(function(type) { " +
+        "  document.dispatchEvent(new KeyboardEvent(type, init)); " +
+        "}); " +
+        "})()";
+      chrome.tabs.executeScript(tabs[0].id, { code: code });
+    });
+  };
+
   chrome.commands.onCommand.addListener(function(command) {
     sendAction(command);
+    chrome.storage.sync.get(function(obj) {
+      if (obj["hotkey-passthrough"]) {
+        sendKeyboardPassthrough(command);
+      }
+    });
   });
 
   /**
