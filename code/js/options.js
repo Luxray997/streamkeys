@@ -71,6 +71,11 @@ var OptionsViewModel = function OptionsViewModel() {
       if (!value) self.useMPRIS(false);
     });
 
+    self.passthroughMode = ko.observable(obj["hotkey-passthrough"]);
+    self.passthroughMode.subscribe(function(value) {
+      chrome.storage.sync.set({ "hotkey-passthrough": value });
+    });
+
     self.settingsInitialized(true);
   });
 
